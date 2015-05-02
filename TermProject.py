@@ -15,6 +15,7 @@ from sklearn.datasets.samples_generator import make_regression
 
 
 strmaps = {}
+base = 10
 
 def read_date(s='04/09/2014'):
 	date=datetime.datetime.strptime(s, '%m/%d/%Y').date()	
@@ -63,12 +64,6 @@ def read_name_map(filname):
 				if not isfloat(c):
 					#print '~~~~', c, type(c)
 					c=read_city(c, cnt)
-				feat.append(c)
-			features.append(feat)
-			output.append(float(row[-1]))
-			#print 'row',row
-			#print 'feat',feat
-	return (features, output)
 	
 
 def read_train_csv(filname):
@@ -92,21 +87,23 @@ def read_train_csv(filname):
 					c=read_city(c, cnt)
 				feat.append(c)
 			features.append(feat)
-			output.append(math.log(1+float(row[-1])))
+			output.append(math.log(1+float(row[-1]), base))
 			#print 'row',row
 			#print 'feat',feat
 	return (features, output)
 
-"""
+
 def read_test_csv(filname):
 	import csv
 	features=[]
+	orginaltestfeatures = []
 	output=[]
 	with open(filname) as csvfile:
 		reader=csv.reader(csvfile)
 		headers = reader.next()
 		#print headers
 		for row in reader:
+			orginaltestfeatures.append(row)
 			feat = []
 			cnt = 0
 			for c in row[1:]:
@@ -123,8 +120,8 @@ def read_test_csv(filname):
 			#output.append(math.log(1+float(row[-1]),20))
 			#print 'row',row
 			#print 'feat',feat
-	return features
-"""
+	return (features, orginaltestfeatures)
+
 
 def get_category_arr(col, val):
 	# train data has index column, which is removed.
@@ -160,12 +157,12 @@ def write_train_csv(filname, features, output):
 			newfeatures.append(row[:])
 			row.append(output[rowidx])
 			rowidx += 1 
-			print row
+			# print row
 			a.writerow(row)
 
 	return (newfeatures, output)
 
-"""
+
 def write_test_csv(filname, features):
 	#print "categories", json.dumps(strmaps)
 	#print "<<<<<<<<<<<>>>>>>>>>>>>>"
@@ -193,16 +190,16 @@ def write_test_csv(filname, features):
 
 	return newfeatures
 
-"""
-def estimator_train(features,output):
-	#from sklearn.ensemble import ExtraTreesClassifier
-	#clf=ExtraTreesClassifier(n_estimators=1000, criterion='entropy', max_depth=None, min_samples_split=1, random_state=0)
-	#clf.fit(features,output)
 
-	estimator = KernelRidge(alpha=1.0)
+def estimator_train(features,output):
+	#from sklearn.ensemble import RandomForestRegressor
+	estimator = RandomForestRegressor(random_state=0, n_estimators=1000, n_jobs=2, warm_start=True)
 	estimator.fit(features,output)
-	#score = cross_val_score(estimator, features, output).mean()
-	#print 'score',score
+
+	#estimator = KernelRidge(alpha=1.0)
+	#estimator.fit(features,output)
+	score = cross_val_score(estimator, features, output).mean()
+	print 'score',score
 	return estimator
 
 def estimator_test(estimator,testfeatures):
@@ -213,11 +210,12 @@ def estimator_test(estimator,testfeatures):
 
 
 
-read_name_map('train.csv')
+read_name_map('all.csv')
+print "Name Map:", strmaps
 
-trainfeatures, trainoutput = read_train_csv('TrainingData.csv')
+trainfeatures, trainoutput = read_train_csv('train.csv')
 
-trainfeatures, trainoutput = write_train_csv("Modified_TrainingData.csv", trainfeatures, trainoutput)
+trainfeatures, trainoutput = write_train_csv("Modified_train.csv", trainfeatures, trainoutput)
 
 #regr = linear_model.LinearRegression()
 
@@ -228,23 +226,35 @@ trainfeatures, trainoutput = write_train_csv("Modified_TrainingData.csv", trainf
 
 #testfeatures, testoutput = read_train_csv('TestingData.csv')
 
-testfeatures, testoutput = read_train_csv('TestingData.csv')
+testfeatures, orginaltestfeatures = read_test_csv('test.csv')
 
-testfeatures, testoutput = write_train_csv("Modified_TestingData.csv", testfeatures, testoutput)
+testfeatures = write_test_csv("Modified_test.csv", testfeatures)
 
-#estimator = estimator_train(trainfeatures, trainoutput)
-#testpredict = estimator_test(estimator, testfeatures)
+estimator = estimator_train(trainfeatures, trainoutput)
+testpredict = estimator_test(estimator, testfeatures)
+
+with open("testdatasubmit",'wb') as fil:
+	lines = []
+	idx = 0
+	for i in range(0, len(testpredict)):
+		lin = str(idx) + ', '+ str(base ** testpredict[i]) + '\n'
+		idx += 1
+		lines.append(lin)
+	fil.writelines(lines)
 
 
-"""
+
 with open("testdatapredict",'wb') as fil:
 	lines = []
 	for i in range(0, len(testpredict)):
-		lin = '' + testpredict[i]+','
-		lin += ''.join(testoriginfeatures[i])
+		lin = ', '.join(str(x) for x in orginaltestfeatures[i])
+		lin += ', '+ str(base ** testpredict[i]) 
 		lin += '\n'
 		lines.append(lin)
 	fil.writelines(lines)
+
+
+
 
 """
 
@@ -271,11 +281,13 @@ for i in range(len(testoutput)):
 print '++++++++++++++++++++++++++++++++++'
 print 'Total (log)', len(testpredict), 'Log Error ', error/len(testoutput)
 
+error = 0
 for i in range(len(testoutput)):
-	error += (math.exp(testpredict[i])-math.exp(testoutput[i]))*(math.exp(testpredict[i])-math.exp(testoutput[i]))
+	error += (base ** testpredict[i] - base ** testoutput[i]) ** 2
 print '++++++++++++++++++++++++++++++++++'
 print 'Total ', len(testpredict), 'Error ', error/len(testoutput)
 
 #'Accuracy', float(len(testpredict)-error)/len(testpredict)
 
 #belon is for make output predictions
+"""
